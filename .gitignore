@@ -11,3 +11,5 @@ wheels/
 
 .roo
 .DS_Store
+src/jquants_free_mcp_server/.env
+.gitignore

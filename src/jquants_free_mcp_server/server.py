@@ -6,6 +6,10 @@ from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 
+# Dify APIクライアント設定
+DIFY_API_KEY = os.environ.get("DIFY_API_KEY", "")
+DIFY_API_URL = os.environ.get("DIFY_API_URL", "https://api.dify.ai/v1")
+
 mcp_server = FastMCP("JQuants-MCP-server")
 
 async def make_requests(url: str,timeout: int = 30) -> dict[str, Any]:
@@ -47,6 +51,51 @@ async def make_requests(url: str,timeout: int = 30) -> dict[str, Any]:
         else:
             error_msg = f"予期せぬエラーが発生しました: {str(e)}"
             return {"error": error_msg, "status": "unexpected_error"}
+
+async def make_dify_request(prompt: str, context: str = "", timeout: int = 60) -> dict[str, Any]:
+    """
+    Dify APIにリクエストを送信し、LLM推論結果を取得
+    
+    Args:
+        prompt (str): LLMへのプロンプト
+        context (str, optional): 追加コンテキスト. Defaults to "".
+        timeout (int, optional): タイムアウト秒数. Defaults to 60.
+        
+    Returns:
+        dict[str, Any]: APIレスポンス
+    """
+    if not DIFY_API_KEY:
+        return {"error": "DIFY_API_KEYが設定されていません", "status": "api_key_error"}
+    
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            headers = {
+                'Authorization': f'Bearer {DIFY_API_KEY}',
+                'Content-Type': 'application/json'
+            }
+            data = {
+                "inputs": {"prompt": prompt, "context": context},
+                "response_mode": "blocking"
+            }
+            response = await client.post(
+                f"{DIFY_API_URL}/completion-messages",
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code != 200:
+                return {
+                    "error": f"Dify APIリクエスト失敗. ステータスコード: {response.status_code}",
+                    "status": "request_error"
+                }
+                
+            return response.json()
+            
+    except Exception as e:
+        return {
+            "error": f"Dify APIリクエスト中にエラー: {str(e)}",
+            "status": "api_error"
+        }
 
 
 @mcp_server.tool()
@@ -154,6 +203,47 @@ async def get_financial_statements(
     response_json = {'statements': response_json_list}
     return json.dumps(response_json, ensure_ascii=False)
 
+
+@mcp_server.tool()
+async def analyze_with_dify(
+        data: str,
+        prompt: str = "この金融データを分析してください",
+    ) -> str:
+    """
+    Dify APIを使用してLLMでデータ分析を実行
+    
+    Args:
+        data (str): 分析対象のデータ (JSON文字列)
+        prompt (str, optional): LLMへのプロンプト. Defaults to "この金融データを分析してください".
+        
+    Returns:
+        str: LLM分析結果 (JSON文字列)
+    """
+    try:
+        # データをJSONとしてパースしてコンテキスト作成
+        json_data = json.loads(data)
+        context = f"分析対象データ: {json.dumps(json_data, ensure_ascii=False)}"
+        
+        # Dify API呼び出し
+        result = await make_dify_request(prompt, context)
+        if "error" in result:
+            return json.dumps(result, ensure_ascii=False)
+            
+        return json.dumps({
+            "analysis": result.get("answer", ""),
+            "status": "success"
+        }, ensure_ascii=False)
+        
+    except json.JSONDecodeError:
+        return json.dumps({
+            "error": "無効なJSONデータです",
+            "status": "invalid_json"
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({
+            "error": f"分析中にエラーが発生しました: {str(e)}",
+            "status": "analysis_error"
+        }, ensure_ascii=False)
 
 def main() -> None:
     print("Starting J-Quants MCP server!")

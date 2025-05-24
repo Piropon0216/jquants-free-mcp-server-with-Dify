@@ -1,0 +1,12 @@
+{
+    "servers": {
+        "my-mcp-server-9d5bb074": {
+            "type": "stdio",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/server.py"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    }
+}

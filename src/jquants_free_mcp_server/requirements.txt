@@ -3,5 +3,6 @@ FastMCP
 streamlit
 matplotlib
 pandas
-jquantsapi
+jquants-api-client
 python-dotenv
+mcp_server
